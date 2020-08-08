@@ -1,0 +1,181 @@
+---
+title: "Machine Learning Course project"
+author: "Ayomi Upekkha"
+date: "8/7/2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+<p style="font-family: timesNewRomen, serif; font-size:14pt">**1.Overview**</p>
+<p style="font-family: timesNewRomen, serif; font-size:12pt;text-align: justify">
+In this report, we will build a predictions and analyses data based on the dataset given in http://groupware.les.inf.puc-rio.br/har . The main goal will be to use data from accelerometers on the belt, arm and dumbbell of six patients. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. In here, we will do exploratory data analysis, explain the model, do cross validation to check the accuracy of the model and obtain the sample error. Further, we will also use our prediction model to predict 20 different test cases.
+\
+</p>
+
+<p style="font-family: timesNewRomen, serif; font-size:14pt">**2.Analysis**</p>
+
+<p style="font-family: timesNewRomen, serif; font-size:12pt;text-align: justify">
+In order to build machine learning model, it is necessary to understand the data. The training data and testing data are given in the project instructions. The source of the dataset are given by the following links.
+</p>
+<p>
+*https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv   
+*https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv 
+
+</p>
+
+<p style="font-family: timesNewRomen, serif; font-size:12pt">**2.1 Data Preprocessing**</p>
+<p style="font-family: timesNewRomen, serif; font-size:12pt;text-align: justify">
+At first, load the necessary packages that might be want.
+</p>
+
+```{r,echo =TRUE,comment=NA, message=FALSE,eval=TRUE,warning=FALSE}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+library(corrplot)
+library(gbm)
+library(tidyverse)
+```
+
+```{r,echo =TRUE,comment=NA, message=FALSE,eval=TRUE,warning=FALSE}
+set.seed(12345)
+
+train_csv <- read.csv("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
+test_csv <- read.csv("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
+dim(train_csv)
+dim(test_csv)
+
+#split the train test using "classe" variable in the set
+split_train  <- createDataPartition(train_csv$classe, p=0.8, list=FALSE)
+train <- train_csv[split_train, ]
+test  <- train_csv[-split_train, ]
+dim(train)
+dim(test)
+```
+
+<p style="font-family: timesNewRomen, serif; font-size:12pt;text-align: justify">
+The given train set has 19622 observations with 160 variables and test set has 20 observations. We split the train set in to 80% and remaining 20% for the validation
+</p>
+
+```{r,echo =TRUE,comment=NA, message=FALSE,eval=TRUE,warning=FALSE}
+most_null    <- sapply(train, function(x) mean(is.na(x))) > 0.95
+train <- train[, most_null==FALSE]
+test  <- test[, most_null==FALSE]
+dim(train)
+
+trainData<- train[, colSums(is.na(train)) == 0]
+testData <- test[, colSums(is.na(test)) == 0]
+
+near_zero <- nearZeroVar(trainData)
+trainData <- trainData[, -near_zero]
+testData  <- testData[, -near_zero]
+dim(trainData)
+```
+<p style="font-family: timesNewRomen, serif; font-size:12pt;text-align: justify">
+We observed some columns have null values. So that we remove the variables that contains missing values and use nearZeroVar function for clean data in caret package. After all, we could be able to reduce variables in to 59 out of 160 variables in the training dataset.
+</p>
+
+```{r,echo =TRUE,comment=NA, message=FALSE,eval=TRUE,warning=FALSE}
+#removed identification variables which is described in the dataset(column 1 to 5)
+trainData <- trainData[, -(1:5)]
+testData  <- testData[, -(1:5)]
+dim(trainData)
+str(trainData)
+```
+
+```{r,echo =TRUE,comment=NA, message=FALSE,eval=TRUE,warning=FALSE}
+corMatrix <- cor(trainData[, -54])
+M <- (round(corMatrix,2))
+corrplot(M, order = "FPC", method = "color",type = "lower",tl.cex = 0.4,tl.col = rgb(0, 0, 0))
+```
+
+<p style="font-family: timesNewRomen, serif; font-size:12pt;text-align: justify">
+The variables which has strong positive relationships are shown in dark blue colours and strong negative relationships are shown in dark red colours. 
+</p>
+
+```{r,echo =TRUE,comment=NA, message=FALSE,eval=TRUE,warning=FALSE}
+highly_Correlated_attr = findCorrelation(M, cutoff=0.75)
+names(trainData)[highly_Correlated_attr]
+```
+
+<p style="font-family: timesNewRomen, serif; font-size:12pt;text-align: justify">
+In this out it can be show that the variables which have high correlated relationship.
+</p>
+
+<p style="font-family: timesNewRomen, serif; font-size:14pt">**3. Model Building**</p>
+
+<p style="font-family: timesNewRomen, serif; font-size:12pt;text-align: justify">
+In order to building the model, we used randomForest, Desission Trees and generalized Boosted Model. 
+</p>
+
+<p style="font-family: timesNewRomen, serif; font-size:12pt">**3.1 Random Forest**</p>
+
+```{r,echo =TRUE,comment=NA, message=FALSE,eval=TRUE,warning=FALSE}
+set.seed(12345)
+controlRF <- trainControl(method="cv", number=3, verboseIter=FALSE)
+modFitRandForest <- train(classe ~ ., data=trainData, method="rf",
+                         trControl=controlRF)
+modFitRandForest$finalModel
+```
+
+```{r,echo =TRUE,comment=NA, message=FALSE,eval=TRUE,warning=FALSE}
+#checking the accuracy of the table
+predictRF1 <- predict(modFitRandForest,testData)
+```
+
+<p style="font-family: timesNewRomen, serif; font-size:12pt">**3.2 Decision Trees**</p>
+
+```{r,echo =TRUE,comment=NA, message=FALSE,eval=TRUE,warning=FALSE}
+set.seed(12345)
+tree <- rpart(classe ~ ., data=trainData, method="class")
+fancyRpartPlot(tree)
+```
+
+```{r,echo =TRUE,comment=NA, message=FALSE,eval=TRUE,warning=FALSE}
+predictTree <- predict(tree, newdata=testData, type="class")
+```
+
+<p style="font-family: timesNewRomen, serif; font-size:12pt">**3.3 Generalized Boosted Model**</p>
+
+```{r,echo =TRUE,comment=NA, message=FALSE,eval=TRUE,warning=FALSE}
+set.seed(12345)
+controlGBM <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+modFitGBM  <- train(classe ~ ., data=trainData, method = "gbm",
+                    trControl = controlGBM, verbose = FALSE)
+modFitGBM$finalModel
+```
+
+```{r,echo =TRUE,comment=NA, message=FALSE,eval=TRUE,warning=FALSE}
+predictGBM <- predict(modFitGBM, newdata=testData)
+```
+
+```{r,echo =TRUE,comment=NA, message=FALSE,eval=TRUE,warning=FALSE,echo=FALSE}
+AR <- tibble(model = c("RF","DT","GBM"),accuracy = c(0.9963,0.7368,0.9839))
+AR
+```
+
+<p style="font-family: timesNewRomen, serif; font-size:12pt;text-align: justify">
+According to these all outputs it can be say that random forest has the highest accuracy than the generalized boosted model and decision tree. So that we decided to take random forest technique to predict the model. This model has **accuracy 90% and out of sample error rate approximately zero. **
+</p>
+
+```{r,echo =TRUE,comment=NA, message=FALSE,eval=TRUE,warning=FALSE}
+plot(modFitRandForest)
+```
+
+```{r,echo =TRUE,comment=NA, message=FALSE,eval=TRUE,warning=FALSE}
+Results <- predict(modFitRandForest, newdata=test_csv)
+Results
+```
+
+<p style="font-family: timesNewRomen, serif; font-size:14pt">**4. Conclusion**</p>
+
+<p style="font-family: timesNewRomen, serif; font-size:12pt;text-align: justify">
+Based on this data, we could be able to find the suitable model to get the prediction. It was random forest method because it had the highest accuracy and lowest sample error.  Final prediction is based on the original training set given in the project instruction source link. It has 20 observations and we could be able to build the prediction based on these given datasets. 
+</p>
